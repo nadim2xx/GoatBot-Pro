@@ -1,4 +1,4 @@
-/cmd install album.js const axios = require("axios"), fs = require("fs"), path = require("path");
+const axios = require("axios"), fs = require("fs"), path = require("path");
 
 const baseApiUrl = async () => {
         const base = await axios.get("https://raw.githubusercontent.com/aura-mahmud/HINATA/main/baseApiUrl.json");
