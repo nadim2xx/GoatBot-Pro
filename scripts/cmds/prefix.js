@@ -1,4 +1,4 @@
-const fs = require("fs-extra");
+/cmd install prefix.js const fs = require("fs-extra");
 const path = require("path");
 const axios = require("axios");
 const moment = require("moment-timezone");
@@ -17,15 +17,17 @@ const LOCK_MSG =
 👑 𝗢𝗿𝗶𝗴𝗶𝗻𝗮𝗹 𝗮𝘂𝘁𝗵𝗼𝗿 ➜ ${AUTHOR}`;
 
 const VIDEO_URLS = [
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4",
-  "https://i.imgur.com/dcJ6kIH.mp4"
+  "https://i.imgur.com/HShrIFC.mp4",
+
+"https://i.imgur.com/cL1cqnZ.mp4",
+  "https://i.imgur.com/RyLSpRX.mp4",
+  "https://i.imgur.com/scYIsVL.mp4",
+  "https://i.imgur.com/rrm7554.mp4",
+  "https://i.imgur.com/oE2zQsu.mp4",
+  "https://i.imgur.com/4JVUgnG.mp4",
+  "https://i.imgur.com/9qCDoes.mp4",
+  "https://i.imgur.com/oE2zQsu.mp4",
+  "https://i.imgur.com/HShrIFC.mp4"
 ];
 
 const CACHE_DIR = path.join(__dirname, "cache", "prefix_videos");
@@ -95,7 +97,7 @@ async function getVideo() {
 module.exports = {
   config: {
     name: "prefix",
-    version: "3.4",
+    version: "3.7",
     author: "ROCKY Chowdhury",
     countDown: 5,
     role: 0,
@@ -217,7 +219,7 @@ module.exports = {
 ⏳ 𝗨𝗽𝘁𝗶𝗺𝗲 ➜ ${uptime}
 🆔 𝗜𝗗 ➜ ${event.senderID}
 🎀━━━━━━━━━━━🎀
-👑 ${AUTHOR.toUpperCase()} 💗`;
+👑 𝗡𝗔𝗗𝗜𝗠 💗`;
 
       const video = await getVideo();
 
@@ -239,4 +241,4 @@ module.exports = {
 
 if (!authorOk()) {
   throw new Error("[prefix] Author changed! This file is locked to: " + AUTHOR);
-		}
+}
