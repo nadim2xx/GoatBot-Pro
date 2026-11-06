@@ -70,6 +70,7 @@ module.exports = {
 ━━━━━━━━━━━━━━━  
 🎬 ᴛɪᴛʟᴇ: ${title || "Video File"}  
 📦 sɪᴢᴇ: ${fileSizeInMB.toFixed(2)} MB  
+video by Cikkku🐥
 ━━━━━━━━━━━━━━━`,
                         attachment: fs.createReadStream(filePath)
                     },
