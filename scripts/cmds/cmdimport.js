@@ -4,17 +4,20 @@ const fs = require("fs-extra");
 const path = require("path");
 const vm = require("vm");
 
+const MAX_FILES = 50;
+const MAX_SIZE = 300000;
+
 module.exports = {
   config: {
     name: "cmdimport",
-    version: "1.0.0",
+    aliases: ["importcmd", "cmdsimport"],
+    version: "3.0",
     author: "NADIM",
     countDown: 15,
     role: 2,
-    shortDescription: "Import missing commands from GitHub",
-    longDescription: "Find and stage missing commands from another GitHub fork",
+    description: "Import missing commands from GitHub",
     category: "owner",
-    guide: "{prefix}cmdimport <GitHub repository link>"
+    guide: "{pn} <GitHub repository link>"
   },
 
   onStart: async function ({ message, args }) {
@@ -22,152 +25,185 @@ module.exports = {
 
     if (!link) {
       return message.reply(
-        "❌ Please provide a GitHub repository link!\n\nExample:\n-cmdimport https://github.com/user/repo.git"
+        "❌ Give a GitHub repository link!\n\n" +
+        "/cmdimport https://github.com/user/repo"
       );
     }
 
+    const match = link.match(
+      /^https?:\/\/github\.com\/([^/]+)\/([^/?#]+?)(?:\.git)?\/?$/i
+    );
+
+    if (!match) {
+      return message.reply("❌ Invalid GitHub link!");
+    }
+
+    const owner = match[1];
+    const repo = match[2];
+
+    const headers = {
+      "User-Agent": "NADIM-CMD-IMPORTER",
+      Accept: "application/vnd.github+json"
+    };
+
+    const commandDir = __dirname;
+    const imported = [];
+    const skipped = [];
+    const failed = [];
+
     try {
-      const match = link.match(
-        /github\.com\/([^\/]+)\/([^\/\.?#]+)/
-      );
-
-      if (!match) {
-        return message.reply("❌ Invalid GitHub URL!");
-      }
-
-      const owner = match[1];
-      const repo = match[2].replace(/\.git$/, "");
-
-      const headers = {
-        "User-Agent": "NADIM-CMD-IMPORTER"
-      };
-
-      message.reply("🔍 Checking GitHub repository...");
+      await message.reply("🔍 Scanning GitHub repository...");
 
       const repoInfo = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}`,
-        { headers }
+        { headers, timeout: 20000 }
       );
 
       const branch = repoInfo.data.default_branch;
 
-      const treeResponse = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
-        { headers }
+      const tree = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+        { headers, timeout: 30000 }
       );
 
-      const remoteFiles = treeResponse.data.tree.filter(file =>
-        file.type === "blob" &&
-        file.path.startsWith("scripts/cmds/") &&
-        file.path.endsWith(".js") &&
-        file.path.split("/").length === 3
-      );
+      if (tree.data.truncated) {
+        return message.reply("❌ Repository tree is too large!");
+      }
 
-      if (!remoteFiles.length) {
+      const files = tree.data.tree.filter(file => {
+        const parts = file.path.split("/");
+
+        return (
+          file.type === "blob" &&
+          parts.length === 3 &&
+          parts[0] === "scripts" &&
+          parts[1] === "cmds" &&
+          /^[a-zA-Z0-9_.-]+\.js$/i.test(parts[2])
+        );
+      });
+
+      if (!files.length) {
         return message.reply(
-          "❌ No commands found in scripts/cmds/!"
+          "❌ No commands found in scripts/cmds/"
         );
       }
 
-      const localDir = __dirname;
-      const importDir = path.join(localDir, "imported");
+      if (files.length > MAX_FILES) {
+        return message.reply(
+          `❌ Found ${files.length} commands. Maximum is ${MAX_FILES}.`
+        );
+      }
 
-      await fs.ensureDir(importDir);
+      const localFiles = await fs.readdir(commandDir);
 
-      const localFiles = await fs.readdir(localDir);
-      const stagedFiles = await fs.readdir(importDir);
+      const existing = new Set(
+        localFiles.map(file => file.toLowerCase())
+      );
 
-      const existing = new Set([
-        ...localFiles,
-        ...stagedFiles
-      ].map(name => name.toLowerCase()));
-
-      const missing = remoteFiles.filter(file =>
+      const missing = files.filter(file =>
         !existing.has(path.basename(file.path).toLowerCase())
       );
 
       if (!missing.length) {
         return message.reply(
-          "✅ All command filenames already exist!\nNo missing CMD found."
+          "✅ Your bot already has all these commands!"
         );
       }
-
-      let imported = [];
-      let skipped = [];
 
       for (const file of missing) {
         const filename = path.basename(file.path);
 
         try {
-          const rawURL =
+          const url =
             `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(branch)}/${file.path}`;
 
-          const response = await axios.get(rawURL, {
+          const response = await axios.get(url, {
             headers,
             timeout: 20000,
             responseType: "text",
-            maxContentLength: 300000
+            maxContentLength: MAX_SIZE
           });
 
           const code = response.data;
 
           if (
             typeof code !== "string" ||
+            Buffer.byteLength(code, "utf8") > MAX_SIZE ||
             !code.includes("module.exports")
           ) {
             skipped.push(filename);
             continue;
           }
 
-          // Syntax check only; never execute imported code.
+          // Syntax check without executing imported code
           new vm.Script(code, { filename });
 
-          const destination = path.join(importDir, filename);
+          const destination = path.join(
+            commandDir,
+            filename
+          );
 
-          await fs.writeFile(destination, code, "utf8");
+          // Never overwrite existing files
+          if (await fs.pathExists(destination)) {
+            skipped.push(filename);
+            continue;
+          }
+
+          // Stage for manual review, not automatic execution
+          const reviewDir = path.join(
+            commandDir,
+            "_review_imports"
+          );
+
+          await fs.ensureDir(reviewDir);
+
+          await fs.writeFile(
+            path.join(reviewDir, filename),
+            code,
+            { encoding: "utf8", flag: "wx" }
+          );
 
           imported.push(filename);
-        } catch (err) {
-          skipped.push(filename);
+
+        } catch (error) {
+          failed.push(filename);
+          console.error(filename, error.message);
         }
       }
 
-      let result =
-        "╭━━━〔 CMD IMPORT REPORT 〕━━━╮\n\n" +
-        `📦 Repository: ${owner}/${repo}\n` +
-        `📁 Found: ${remoteFiles.length}\n` +
-        `✅ Staged: ${imported.length}\n` +
-        `⚠️ Skipped: ${skipped.length}\n\n`;
+      let report =
+        "╭━━━〔 NADIM CMD IMPORTER 〕━━━╮\n\n" +
+        `📦 Fork: ${owner}/${repo}\n` +
+        `🔎 Found: ${files.length}\n` +
+        `📥 Missing: ${missing.length}\n` +
+        `✅ Imported for review: ${imported.length}\n` +
+        `⚠️ Skipped: ${skipped.length}\n` +
+        `❌ Failed: ${failed.length}\n\n`;
 
       if (imported.length) {
-        result +=
-          "━━ IMPORTED CMDS ━━\n" +
+        report +=
+          "━━ NEW COMMANDS ━━\n" +
           imported.slice(0, 25).join("\n") +
           "\n\n";
       }
 
-      if (skipped.length) {
-        result +=
-          "━━ SKIPPED CMDS ━━\n" +
-          skipped.slice(0, 15).join("\n") +
-          "\n\n";
-      }
+      report +=
+        "📂 Location: scripts/cmds/_review_imports/\n" +
+        "🔐 Review files before moving them into scripts/cmds/.\n" +
+        "╰━━━━━━━━━━━━━━━━━━━━━━━━╯";
 
-      result +=
-        "📂 Location: scripts/cmds/imported/\n" +
-        "⚠️ Review imported code before activation.\n" +
-        "╰━━━━━━━━━━━━━━━━━━╯";
-
-      return message.reply(result);
+      return message.reply(report);
 
     } catch (error) {
-      console.error(error);
+      console.error("CMD IMPORT ERROR:", error);
 
       return message.reply(
-        "❌ Import failed!\n" +
+        "❌ GitHub Import Failed!\n" +
         (error.response?.status === 404
-          ? "Repository or branch not found."
-          : "Check repository access or GitHub API limits.")
+          ? "Repository not found or branch unavailable."
+          : error.response?.status === 403
+          ? "GitHub API rate limit reached."
+          : error.message)
       );
     }
   }
